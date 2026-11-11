@@ -59,14 +59,14 @@ npm test
 ```
 
 ```bash
-docker build -t enzoojapa/milscale-escala-service:v1 .
-docker run -p 3002:3002 -e SQL_CONNECTION_STRING="..." -e SERVICEBUS_CONNECTION_STRING="..." enzoojapa/milscale-escala-service:v1
+docker build -t enzowlima/milscale-escala-service:v1 .
+docker run -p 3002:3002 -e SQL_CONNECTION_STRING="..." -e SERVICEBUS_CONNECTION_STRING="..." enzowlima/milscale-escala-service:v1
 ```
 
 ## Links
 
-- Swagger: _LINK_SWAGGER_
-- Docker Hub: _LINK_DOCKER_
+- Swagger: https://ca-milscale-escala.ashyforest-fcfffbba.eastus2.azurecontainerapps.io/swagger (eventos: https://ca-milscale-escala.ashyforest-fcfffbba.eastus2.azurecontainerapps.io/asyncapi.json)
+- Docker Hub: https://hub.docker.com/r/enzowlima/milscale-escala-service
 
 ## Projetos do sistema
 
