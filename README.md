@@ -1,88 +1,31 @@
 # MilScale - Escala Service
 
-Microsserviço de escalas de serviço e trocas do MilScale. Cada escala é um serviço de 24 horas (08h00 às 08h00 do dia seguinte) em um posto.
-Ao publicar uma escala ou aprovar uma troca, o serviço emite um evento no **Azure Service Bus**, consumido pela Azure Function que notifica os militares.
+Esse é o microsserviço das escalas de serviço e das trocas. Cada escala é um serviço de 24 horas, das 08h00 às 08h00 do dia seguinte, em um posto como cabo da guarda ou sentinela. O sargenteante monta a escala como rascunho, publica, e depois disso os militares só podem pedir troca.
 
-## Regras de negócio
+As regras que o serviço garante são as que o pessoal da sargenteação usa hoje na planilha: o mesmo militar não pode ser escalado duas vezes no mesmo dia, escala publicada não pode mais ser editada nem apagada, troca só pode ser pedida com pelo menos 24 horas de antecedência do início do serviço e o substituto não pode já estar escalado naquele dia.
 
-- Um militar não pode ser escalado duas vezes no mesmo dia.
-- Escala publicada não pode ser editada nem removida, só trocada.
-- Troca só pode ser pedida com **no mínimo 24 horas** de antecedência do início do serviço.
-- O substituto não pode já estar escalado no mesmo dia.
+Quando uma escala é publicada ou uma troca é aprovada, o serviço grava o evento no banco e manda uma mensagem pra fila `escala-eventos` do Azure Service Bus. Quem consome essa fila é a Azure Function, que gera a notificação pros militares. Os eventos são o EscalaPublicada e o TrocaAprovada, o contrato deles está em `/asyncapi.json` e também na seção Eventos do Swagger, e o histórico pode ser consultado em `GET /eventos`.
 
-## Arquitetura
+O banco é o Azure SQL Database, com as tabelas de escalas, trocas e eventos, que são criadas quando o serviço sobe. O código segue Clean Architecture com Vertical Slice: o domínio tem a Escala, a Troca, as regras e as interfaces (repositórios, publicador de eventos e relógio), a aplicação tem um caso de uso por pasta (criar, listar, buscar, editar, remover e publicar escala, pedir, listar e aprovar troca, listar eventos), a infraestrutura tem os repositórios do SQL e o publicador do Service Bus, e a API tem as rotas, o Swagger e o AsyncAPI. Os testes unitários cobrem principalmente a regra das 24h e o conflito de datas, e os de arquitetura garantem que o Service Bus e o SQL só aparecem na infraestrutura.
 
-```
-Usuário -> Microfrontend (React) -> API Gateway (AWS) -> BFF (Node.js)
-                                                         |-> Efetivo Service -> MongoDB Atlas
-                                                         |-> Escala Service  -> Azure SQL
-                                                         |                   -> Azure Service Bus -> Function (notificar-escala)
-                                                         |-> Azure Function (calcular-ciclo)
-```
+Foi feito em Node.js 22 com TypeScript, Express 5, mssql e o SDK do Service Bus, com Swagger UI, AsyncAPI, Jest, Supertest e Docker.
 
-**Clean Architecture** + **Vertical Slice**:
-
-```
-src/
-  domain/            Escala, Troca, regras e portas (repositórios, EventPublisher, Clock)
-  application/       create-escala, list-escalas, get-escala, update-escala, delete-escala,
-                     publish-escala, request-troca, list-trocas, approve-troca, list-eventos
-  infrastructure/    repositórios Azure SQL (mssql), publisher do Service Bus, log de eventos
-  api/               rotas por feature, Swagger (OpenAPI) e contrato de eventos (AsyncAPI)
-tests/
-  unit/              regras de domínio (24h, conflito de datas) e API
-  architecture/      dependências entre camadas, slices e uso do Service Bus só na infraestrutura
-```
-
-Banco: **Azure SQL Database** (tabelas `escalas`, `trocas` e `eventos`, criadas na inicialização).
-
-## Eventos
-
-| Evento | Quando | Fila |
-|---|---|---|
-| EscalaPublicada | POST /escalas/{id}/publicar | escala-eventos |
-| TrocaAprovada | POST /trocas/{id}/aprovar | escala-eventos |
-
-Contrato em `/asyncapi.json` e nos schemas da seção Eventos do Swagger. O histórico fica em `GET /eventos`.
-
-## Tecnologias
-
-Node.js 22, TypeScript, Express 5, mssql (Azure SQL), @azure/service-bus, Swagger UI, AsyncAPI, Jest, Supertest, Docker.
-
-## Como rodar localmente
+Pra rodar localmente precisa da connection string do SQL e do Service Bus no `.env`:
 
 ```bash
 npm install
-cp .env.example .env   # SQL_CONNECTION_STRING e SERVICEBUS_CONNECTION_STRING
-npm run dev            # http://localhost:3002/swagger
+cp .env.example .env
+npm run dev
 npm test
 ```
 
+A imagem foi publicada no Docker Hub assim:
+
 ```bash
 docker build -t enzowlima/milscale-escala-service:v1 .
-docker run -p 3002:3002 -e SQL_CONNECTION_STRING="..." -e SERVICEBUS_CONNECTION_STRING="..." enzowlima/milscale-escala-service:v1
+docker push enzowlima/milscale-escala-service:v1
 ```
 
-## Links
+Na nuvem ele roda no Azure Container Apps. O Swagger está em https://ca-milscale-escala.ashyforest-fcfffbba.eastus2.azurecontainerapps.io/swagger, o contrato dos eventos em https://ca-milscale-escala.ashyforest-fcfffbba.eastus2.azurecontainerapps.io/asyncapi.json e a imagem em https://hub.docker.com/r/enzowlima/milscale-escala-service. Os outros repositórios são o frontend (https://github.com/enzoojapa/milscale-frontend), o BFF (https://github.com/enzoojapa/milscale-bff), o serviço de efetivo (https://github.com/enzoojapa/milscale-efetivo-service) e a Function (https://github.com/enzoojapa/milscale-function).
 
-- Swagger: https://ca-milscale-escala.ashyforest-fcfffbba.eastus2.azurecontainerapps.io/swagger (eventos: https://ca-milscale-escala.ashyforest-fcfffbba.eastus2.azurecontainerapps.io/asyncapi.json)
-- Docker Hub: https://hub.docker.com/r/enzowlima/milscale-escala-service
-
-## Projetos do sistema
-
-| Componente | Repositório |
-|---|---|
-| Microfrontend (React) | [milscale-frontend](https://github.com/enzoojapa/milscale-frontend) |
-| BFF (Node.js) | [milscale-bff](https://github.com/enzoojapa/milscale-bff) |
-| Microsserviço de efetivo (MongoDB) | [milscale-efetivo-service](https://github.com/enzoojapa/milscale-efetivo-service) |
-| Microsserviço de escalas (Azure SQL) | [milscale-escala-service](https://github.com/enzoojapa/milscale-escala-service) |
-| Azure Function | [milscale-function](https://github.com/enzoojapa/milscale-function) |
-
-## Alunos
-
-- Enzo Watanabe de Lima
-- João Guilherme Salomão
-- João Guilherme Cordeiro
-- Rafael Zeni Simião
-
-PUCPR - Engenharia de Software - Arquitetura e Soluções Cloud (2026/2)
+Trabalho feito por Enzo Watanabe de Lima, João Guilherme Salomão, João Guilherme Cordeiro e Rafael Zeni Simião, para a disciplina de Arquitetura e Soluções Cloud da PUCPR (2026/2).
